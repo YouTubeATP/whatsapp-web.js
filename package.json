@@ -60,7 +60,7 @@
         "jsdoc-baseline": "^0.1.5",
         "lint-staged": "^16.3.2",
         "mocha": "^11.7.5",
-        "prettier": "^3.8.1",
+        "prettier": "^3.9.8",
         "sinon": "^21.0.2"
     },
     "engines": {
