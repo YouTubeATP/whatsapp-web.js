@@ -1,0 +1,54 @@
+name: Check upstream for updates
+
+on:
+  schedule:
+    # Weekly, Monday 09:00 UTC
+    - cron: '0 9 * * 1'
+  workflow_dispatch: {}
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  check-upstream:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compare base version to upstream latest release
+        id: compare
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          BASE_VERSION="$(cat .fork-base-version | tr -d '[:space:]')"
+          LATEST_TAG="$(gh api repos/wwebjs/whatsapp-web.js/releases/latest --jq .tag_name)"
+          LATEST_VERSION="${LATEST_TAG#v}"
+          echo "base_version=$BASE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "latest_version=$LATEST_VERSION" >> "$GITHUB_OUTPUT"
+          echo "latest_tag=$LATEST_TAG" >> "$GITHUB_OUTPUT"
+          if [ "$BASE_VERSION" != "$LATEST_VERSION" ]; then
+            echo "needs_update=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "needs_update=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open or update tracking issue
+        if: steps.compare.outputs.needs_update == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASE_VERSION: ${{ steps.compare.outputs.base_version }}
+          LATEST_TAG: ${{ steps.compare.outputs.latest_tag }}
+        run: |
+          set -euo pipefail
+          TITLE="Upstream whatsapp-web.js $LATEST_TAG available (fork is on $BASE_VERSION)"
+          EXISTING="$(gh issue list --search "in:title \"Upstream whatsapp-web.js\"" --state open --json number,title --jq '.[0].number // empty')"
+          BODY="wwebjs/whatsapp-web.js released **$LATEST_TAG**. This fork's \`main\` is still built from **$BASE_VERSION** (see \`.fork-base-version\`).
+
+          No automatic action has been taken — see \`FORK_MAINTENANCE.md\` for the manual rebase-and-reapply-patch steps. In particular, check whether $LATEST_TAG already fixes the upstream \`id._serialized\`/\`id.\$1\` issue (wwebjs/whatsapp-web.js#201852, #201862) that this fork's patch exists for — if so, this fork's patch may be reducible or droppable entirely on rebase."
+          if [ -n "$EXISTING" ]; then
+            gh issue edit "$EXISTING" --title "$TITLE" --body "$BODY"
+          else
+            gh issue create --title "$TITLE" --body "$BODY"
+          fi
